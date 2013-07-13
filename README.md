@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # SimpleCV.js - a port of the SimpleCV Framework to Javascript
 
 Currently a Skeleton
@@ -57,3 +58,7 @@ Wraps the following:
 * jsqrcode: https://github.com/LazarSoft/jsqrcode
 
 
+=======
+simplecv-js_GSOC2013
+====================
+>>>>>>> fd681a9bad68a5a489c612964c9e169f4173350d
