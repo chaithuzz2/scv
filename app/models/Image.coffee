@@ -1,4 +1,3 @@
-
 Color = require './Color'
 Model = require './model'
 Display = require './Display'
@@ -79,7 +78,7 @@ module.exports = class Image extends Model
   # Deletes a drawing layer from the image. Will
   # shift the indices of subsequent drawing layers
   # if they exist.
-  removeDrawingLayer:(layer=@layers.lenth-1) =>
+  removeDrawingLayer:(layer=@layers.length-1) =>
     delete @layers[layer]
     @layers.splice(layer, 1)
    
@@ -117,6 +116,42 @@ module.exports = class Image extends Model
   getArray:() =>
     matrix = @ctx.getImageData(0,0,@width,@height)
     return matrix
+
+  # Returns coordinates and value of the pixel with the highest
+  # brightness following the format [x_pos, y_pos, value]
+  getBrightestPixel:()=>
+    points = @getGrayMatrix()
+    x_pos = 0; y_pos = 0; brightness = 0
+    for i in [0..@height-1]
+      for j in [0..@width-1]
+        if points[i][j][0] > brightness
+          x_pos = i
+          y_pos = j
+          brightness = points[i][j][0]
+    return [x_pos, y_pos, brightness]
+
+  # Returns coordinates and value of the pixel with the smallest
+  # brightness following the format [x_pos, y_pos, value]
+  getDarkestPixel:()=>
+    points = @getGrayMatrix()
+    x_pos = 0; y_pos = 0; brightness = points[0][0][0]
+    for i in [0..@height-1]
+      for j in [0..@width-1]
+        if points[i][j][0] < brightness
+          x_pos = i
+          y_pos = j
+          brightness = points[i][j][0]
+    return [x_pos, y_pos, brightness]
+
+  # Returns the average brightness of the image.
+  getAverageBrightness:()=>
+    points = @getGrayMatrix()
+    brightness_sum = 0
+    for i in [0..@height-1]
+      for j in [0..@width-1]
+        brightness_sum += points[i][j][0]
+    return brightness_sum / (@width * @height)
+
   
   # Simple image scale. Uses canvas to get this done
   # quickly. Returns a new image.
@@ -234,14 +269,14 @@ module.exports = class Image extends Model
     return new Image(matrix)
 
   # Return a gray matrix suitable for grayscale cv operations.
-  # getGrayArray:() =>
-  #   matrix = @getArray();
-  #   i = 0;
-  #   while i < matrix.data.length
-  #     avg = (matrix.data[i] + matrix.data[i+1] + matrix.data[i+2]) / 3
-  #     matrix.data[i] = matrix.data[i+1] = matrix.data[i+2] = avg
-  #     i += 4
-  #   return matrix
+  getGrayArray:() =>
+    matrix = @getArray(); out = []
+    i = 0;
+    while i < matrix.data.length
+      avg = (matrix.data[i] + matrix.data[i+1] + matrix.data[i+2]) / 3
+      out.push avg
+      i += 4
+    return out
        
   getGrayMatrix:() =>
     result = []; x = [];
@@ -263,7 +298,7 @@ module.exports = class Image extends Model
     matrix = @getArray()
     if threshold is -1 then threshold = CV.otsu(matrix);
     return new Image(CV.threshold(matrix, matrix, threshold))
-  
+
   # Simple function to invert the pixels in an image.
   invert:() =>
     matrix = @getArray(); i = 0;
@@ -359,9 +394,9 @@ module.exports = class Image extends Model
 
   merge:(r,g,b) =>
     # Merge rgb images of the channels into one image
-    if( r.width is not @width and r.height is not @height and \
-        g.width is not @width and g.height is not @height and \
-        b.width is not @width and b.height is not @height )
+    if( r.width isnt @width or r.height isnt @height or \
+        g.width isnt @width or g.height isnt @height or \
+        b.width isnt @width or b.height isnt @height )
       throw 'Sorry - I can\'t merge images of different sizes' 
 
     retVal = @getArray()
@@ -503,6 +538,16 @@ module.exports = class Image extends Model
           for m in [0..temp.length]
             temp[m]=out[m]
       return @cropBorderCopy(out,border)
+
+  #Does an erosion of the dilation of the image (see: http://en.wikipedia.org/wiki/Closing_(morphology))
+  closing:(iterations=1,grayscale=false)=>
+    dilation = @dilate(iterations, grayscale)
+    return dilation.erode(iterations, grayscale)
+
+  #Does an dilation of the erosion of the image (see: http://en.wikipedia.org/wiki/Opening_(morphology))
+  opening:(iterations=1,grayscale=false)=>
+    erosion = @erode(iterations, grayscale)
+    return erosion.dilate(iterations, grayscale)
       
   edges:()=>
     # so this is just the sobel magnitude. if we were really
@@ -517,6 +562,19 @@ module.exports = class Image extends Model
       d = Math.sqrt((xv.data[i]*xv.data[i])+(yv.data[i]*yv.data[i]))
       out.data[i] = @clamp(d) # we reall should scale versus clamp
     return new Image(out)
+
+  # Returns an object with both magnitudes and directions of its edges.
+  # More info at http://en.wikipedia.org/wiki/Sobel_operator#Formulation
+  getEdgesInfo:()=>
+    x = @sobelX().getArray()
+    y = @sobelY().getArray()
+    result = {}
+    result.magnitudes = []
+    result.directions = []
+    for i in [0..x.data.length]
+      result.magnitudes.push(Math.sqrt(Math.pow(x.data[i],2)+Math.pow(y.data[i],2)))
+      result.directions.push(Math.atan(y.data[i]/x.data[i]))
+    return result  
      
   sobelY:(grayscale=false)=>
     kernel = [[-1.0,0.0,1.0],[-2.0,0.0,2.0],[-1.0,0.0,1.0]]
@@ -547,7 +605,7 @@ module.exports = class Image extends Model
           vals.push(temp[((j-1)*w)+((i-1))]*kernel[0][2])
           vals.push(temp[((j)*w)+  ((i+1))]*kernel[1][0])
           vals.push(temp[((j)*w)+  ((i  ))]*kernel[1][1])
-          vals.push(temp[((j)*w)+  ((i-1))]*kernel[1][1])
+          vals.push(temp[((j)*w)+  ((i-1))]*kernel[1][2])
           vals.push(temp[((j+1)*w)+((i+1))]*kernel[2][0])
           vals.push(temp[((j+1)*w)+((i  ))]*kernel[2][1])
           vals.push(temp[((j+1)*w)+((i-1))]*kernel[2][2])
@@ -583,9 +641,8 @@ module.exports = class Image extends Model
   clamp:(x,max=255,min=0) =>
     return Math.max(min, Math.min(max, x))    
 
-  cloneWithBorder:(borderSz) =>
-    #Add a border to the image for convoltuions etc
-    # this should be private
+  # Adds a border to the image for convolutions, etc
+  cloneWithBorder:(borderSz) ->
     bpp = 4 
     oldSz = @width*@height*bpp
     rgbBorderSz = bpp*borderSz
@@ -611,9 +668,8 @@ module.exports = class Image extends Model
         rowStop = rowStop+update
     return temp
 
-  cloneGrayWithBorder:(borderSz) =>
-    #Add a border to the image for convoltuions etc
-    # this should be private
+  # Adds a border to the image for convolutions, etc (grayscale)
+  cloneGrayWithBorder:(borderSz) ->
     bpp = 4
     oldSz = @width*@height*bpp
     rgbBorderSz = bpp*borderSz
@@ -637,10 +693,8 @@ module.exports = class Image extends Model
         rowStop = rowStop+update
     return temp
 
-  cropBorderCopyGray:(img,borderSz) =>
-    # take a border image, crop out the border
-    # and return the image
-    # this should be a private function.
+  # Takes a border image, crops out the border and returns the image (grayscale)
+  cropBorderCopyGray:(img,borderSz) ->
     bpp = 4
     oldSz = @width*@height*bpp
     rgbBorderSz = bpp*borderSz
@@ -666,11 +720,9 @@ module.exports = class Image extends Model
         i = i + (2*borderSz)
         rowStop = rowStop+update
     return new Image(output)
-        
+  
+  # Takes a border image, crops out the border and returns the image      
   cropBorderCopy:(img,borderSz) =>
-    # take a border image, crop out the border
-    # and return the image
-    # this should be a private function.
     bpp = 4
     oldSz = @height*@width*bpp
     rgbBorderSz = bpp*borderSz
@@ -804,7 +856,312 @@ module.exports = class Image extends Model
             idx += 4
             i += 4        
         retVal = new Image(dst)
-     return retVal
+    return retVal
+
+  canny:(highThreshold = 60, lowThreshold = 30, kernel_size = 5)=>
+    ######################################################################################################################################
+    #The Canny edge detector is an edge detection operator that uses a multi-stage algorithm to detect a wide range of edges in images. 
+    #The Algorithm is as follows  
+    #1. Smooth the image with gaussian blur  
+    #2. Obtain gradients in x and y directions by convoluting with sobel kernels   
+    #3. Obtain edgestrengths  G = ((G(x)^2+G(y)^2))^1/2  and edge directions  theta = arctan(G(y)/G(x))
+    #4. After the above step we do something called non maximum suppression . i.e looking for peaks by comparing the edge strengths
+    #   of  the corresponding pixels in the 8-pixel neighbourhood. 
+    #5. Now we have possible edge points and we also have false edge points that we dont really need. so as to obtain true edges
+    #   we do double thresholding. we choose two threshold values highThreshold and lowThreshold. the peaks which are true and  
+    #   have corresponding edge strengths greater than highThreshold . they are marked true in the final edge matrix. the peaks which have 
+    #   edge strengths lower than lowThreshold are marked false and they are not included in the final edge matrix. 
+    #6. The remaining peaks whose edge strengths are in betweeen highThreshold and lowThreshold we check the 8-pixel neighbourhood and if it has 
+    #   a true edge point in that area then we make it true. this is also known as edge linking.
+    #7. Finally we printout black pixel where final edge points dont exist (or false) and white pixel if they are true
+    #
+    #The arguments to this method are given below:
+    #
+    # highThreshold = the higher threshold value for high thresholding
+    #
+    # lowThreshold  = the low threshold value for low thresholding
+    #
+    # kernel_size   = the specified size for gaussian smoothing kernel , it must be odd.
+    ######################################################################################################################################
+
+    blurIm = @blur(kernel_size,false)#smoothing the image to reduce noise
+    gradientX = blurIm.getGrayArray()#initializing gradient matrices for both x and y directions and temp matrices for convolution 
+    tempX = blurIm.getGrayArray()
+    gradientY = blurIm.getGrayArray()
+    tempY = blurIm.getGrayArray()
+    kernelX = [[-1.0,0.0,1.0],[-2.0,0.0,2.0],[-1.0,0.0,1.0]]#the sobel kernels
+    kernelY = [[1.0,2.0,1.0],[0.0,0.0,0.0],[-1.0,-2.0,-1.0]]
+    for j in [1..@width-2] # convolution to obtain the gradients
+      for i in [1..@width-2] #
+        valsX = []
+        valsX.push(tempX[((j-1)*(@width))+((i+1))]*kernelX[2][0])
+        valsX.push(tempX[((j-1)*(@width))+((i  ))]*kernelX[1][0])
+        valsX.push(tempX[((j-1)*(@width))+((i-1))]*kernelX[0][0])
+        valsX.push(tempX[((j)*(@width ))+  ((i+1))]*kernelX[2][1])
+        valsX.push(tempX[((j)*(@width ))+  ((i  ))]*kernelX[1][1])
+        valsX.push(tempX[((j)*(@width ))+  ((i-1))]*kernelX[0][1])
+        valsX.push(tempX[((j+1)*(@width))+((i+1))]*kernelX[2][2])
+        valsX.push(tempX[((j+1)*(@width))+((i  ))]*kernelX[1][2])
+        valsX.push(tempX[((j+1)*(@width))+((i-1))]*kernelX[0][2])
+        accX = 0
+        for v in valsX
+          accX += v          
+        gradientX[(j*(@width))+(i)] = accX
+        
+        valsY = []
+        valsY.push(tempY[((j-1)*(@width))+((i+1))]*kernelY[2][0])
+        valsY.push(tempY[((j-1)*(@width))+((i  ))]*kernelY[1][0])
+        valsY.push(tempY[((j-1)*(@width))+((i-1))]*kernelY[0][0])
+        valsY.push(tempY[((j)*(@width ))+  ((i+1))]*kernelY[2][1])
+        valsY.push(tempY[((j)*(@width ))+  ((i  ))]*kernelY[1][1])
+        valsY.push(tempY[((j)*(@width ))+  ((i-1))]*kernelY[0][1])
+        valsY.push(tempY[((j+1)*(@width ))+((i+1))]*kernelY[2][2])
+        valsY.push(tempY[((j+1)*(@width ))+((i  ))]*kernelY[1][2])
+        valsY.push(tempY[((j+1)*(@width ))+((i-1))]*kernelY[0][2])
+        accY = 0
+        for v in valsY
+          accY += v          
+        gradientY[(j*(@width))+(i)] = accY
+    edge_strength = []# initializing local matrices for use in the algorithm , edge_strength for calculationg edgestrengths
+    peaks = []# peaks for calculating the local maxima(possible edge points)
+    angle = []# angle for calculating the edge directions
+    x = []    #temporary arrays
+    inter = []
+    inter1 = []
+    for i in [0..@height-1]#pushing zeroes into peaks
+      for j in [0..@width-1]
+        x.push 0
+      peaks.push x
+      x = []
+    out = @getArray()#the original image characteistic array used for output
+    b = 0
+    for i in [0..@height-1]# calculation of edge strengths and pushing them into a temporary array and then pushing temp to edge_strength
+      for j in [0..@width-1]# calculation of edge directions and pushing them into a temp array and then pushing temp to angle 
+        d = Math.sqrt((gradientX[b]*gradientX[b] + gradientY[b]*gradientY[b]))
+        s = Math.round(d)
+        inter.push s
+        if (gradientX[b] == 0)
+          if (gradientY[b] >= 0)
+            inter1.push 90
+          else
+            inter1.push -90
+        else
+          k = Math.atan((gradientY[b])/(gradientX[b]))*57.295
+          inter1.push k
+        b+= 1
+      edge_strength.push inter
+      angle.push inter1
+      inter = []
+      inter1 = []
+    for i in [1..@height-2]# non maximum suppression , we basically look for the pixels in the edge direction and compare with them 
+      for j in [1..@width-2]#to obtain peaks
+        if(angle[i][j] < 22.5 and angle[i][j] >= -22.5)
+          if(edge_strength[i][j] > Math.max(edge_strength[i][j-1],edge_strength[i][j+1]))
+            peaks[i][j] = 1
+          else
+            peaks[i][j] = 0
+        if(angle[i][j] < 67.5 and angle[i][j] >= 22.5)
+          if(edge_strength[i][j] > Math.max(edge_strength[i+1][j-1],edge_strength[i-1][j+1]))
+            peaks[i][j] = 1
+          else
+            peaks[i][j] = 0
+        if(angle[i][j] < -22.5 and angle[i][j] >= -67.5)
+          if(edge_strength[i][j] > Math.max(edge_strength[i-1][j-1],edge_strength[i+1][j+1]))
+            peaks[i][j] = 1
+          else
+            peaks[i][j] = 0
+        else
+          if(edge_strength[i][j] > Math.max(edge_strength[i-1][j],edge_strength[i+1][j]))
+            peaks[i][j] = 1
+          else
+            peaks[i][j] = 0
+    y = []
+    final = [] #final array , used for final peaks after hysterisis thresholding
+    for i in [0..@height-1]
+      for j in [0..@width-1]
+        y.push 0
+      final.push y
+      y = []
+    for i in [1..@height-2]# high thresholding , marking all existing peaks in final false if they are lower than highThreshold 
+      for j in [1..@width-2]# and true if they are higher than it
+        if(peaks[i][j] == 1 and edge_strength[i][j] > highThreshold)
+          peaks[i][j] = 0
+          final[i][j] = 1
+        if(peaks[i][j] == 0 and edge_strength[i][j] < lowThreshold)
+          peaks[i][j] = 0
+          final[i][j] = 0
+    flag = 1
+    while(flag == 1)# a simple way of low thresholding i.e for the values less than high threshold and greater than low threshold 
+      flag = 0      # also known as edge linking
+      for i in [1..@height-2]
+        for j in [1..@width-2]
+          if (peaks[i][j] == 1)
+            for p in [-1..1]
+              for q in [-1..1]
+                if(final[i+p][j+q] == 1)
+                  final[i][j] = 1
+                  peaks[i][j] = 0
+                  flag = 1
+    a = 0
+    for i in [0..@height-1]# if in final , it is true print white pixel there 
+      for j in [0..@width-1]# and if its not true print black pixel
+        if (final[i][j] == 1)
+          out.data[a] = 255
+          out.data[a+1] = 255
+          out.data[a+2] = 255
+        else
+          out.data[a] = 0
+          out.data[a+1] = 0
+          out.data[a+2] = 0
+        a+= 4
+    return new Image(out)     
+
+  #posterize effect(cartooning effect) http://en.wikipedia.org/wiki/Posterization
+  posterize:(adjust = 5)=>
+    numOfAreas = 256 / adjust
+    numOfValues = 255 / (adjust - 1)
+    out = @getArray()
+    posterize_LUT = @posterizeLUT(numOfAreas,numOfValues)
+    i = 0
+    while i < out.data.length
+      r = out.data[i]
+      g = out.data[i+1]
+      b = out.data[i+2]
+      out.data[i] = posterize_LUT[r]
+      out.data[i+1] = posterize_LUT[g]
+      out.data[i+2] = posterize_LUT[b]
+      i+=4
+    return new Image(out)
+
+  #look up table for posterize
+  posterizeLUT:(numOfAreas,numOfValues)=>
+    result = []
+    for i in [0..255]
+      k = Math.floor Math.floor(i / numOfAreas) * numOfValues
+      result.push k
+    return result
+  #a gamma filter ,http://en.wikipedia.org/wiki/Gamma_correction
+  gamma:(gammanew = 2)=>
+    out = @getArray()
+    i = 0
+    gamma_LUT = @gammaLUT(gammanew)
+    while i < out.data.length
+      r = out.data[i]
+      g = out.data[i+1]
+      b = out.data[i+2]
+      out.data[i] = gamma_LUT[r]
+      out.data[i+1] = gamma_LUT[g]
+      out.data[i+2] = gamma_LUT[b]
+      i+=4
+    return new Image(out)
     
+  #gamma look up table for increasing performance
+  gammaLUT:(gammatemp)=>
+    result = []
+    for i in [0..255]
+      b = i/255
+      k = Math.round(255*(Math.pow(b,gammatemp)))
+      result.push k
+    return result
+
+  # A sepia filter.
+  sepia:(sepiaIntensity = 30)=>
+    sepiaDepth = 20
+    out = @getArray()
+    i = 0
+    while i < out.data.length
+      r = out.data[i]
+      g = out.data[i+1]
+      b = out.data[i+2]
+      a = out.data[i+3]
+      avg = (r+g+b)/3
+      r = @clamp(avg + (sepiaDepth*2))
+      g = @clamp(avg + sepiaDepth)
+      b = @clamp(avg - sepiaIntensity)
+      out.data[i] = r
+      out.data[i+1] = g
+      out.data[i+2] = b
+      i+=4
+    return new Image(out)
+    
+  #This method changes an Image into an oilpainting.More info at http://supercomputingblog.com/graphics/oil-painting-algorithm/
+  #Don't keep the radius more than 4. As you increase the radius the cost will increase
+  #This Algorithm is slow , so lookout a little longer than usual for the result 
+  oilpaint:(radius = 2,intensityLevels = 20)=>
+    red = []; green = []; blue = []
+    finalRed = []; finalGreen = []; finalBlue = []
+    out = @getArray()
+    x = []; y = []; z = []; f = [];g = []; h =[]
+    a = 0;
+    for i in [0..@height-1]
+      for j in [0..@width-1]
+        x.push out.data[a]
+        f.push out.data[a]
+        y.push out.data[a+1]
+        g.push out.data[a+1]
+        z.push out.data[a+2]
+        h.push out.data[a+2]
+        a+=4
+      red.push x
+      finalRed.push f
+      green.push y
+      finalGreen.push g
+      blue.push z
+      finalBlue.push h
+      x = []; y = []; z = []; f = [];g = []; h =[]
+    for i in [radius..@height-radius-1]
+      for j in [radius..@width-radius-1]
+        intensityCount = []; averageR = []; averageG = []; averageB = []
+        for k in [0..intensityLevels]
+          intensityCount.push 0
+          averageR.push 0 
+          averageG.push 0
+          averageB.push 0
+        for p in [(-radius)..radius]
+          for q in [(-radius)..radius]
+            d = (red[i+p][j+q]+green[i+p][j+q]+blue[i+p][j+q])/3
+            curIntensity = Math.round ((d/255.0)*intensityLevels) 
+            intensityCount[curIntensity]++
+            averageR[curIntensity]+= red[i+p][j+q]
+            averageG[curIntensity]+= green[i+p][j+q]
+            averageB[curIntensity]+= blue[i+p][j+q]
+        curMax = intensityCount[0]
+        for r in [0..intensityLevels]
+          if(intensityCount[r] > curMax)
+            curMax = intensityCount[r]
+            maxIndex = r
+        finalRed[i][j] = averageR[maxIndex] / curMax
+        finalGreen[i][j] = averageG[maxIndex] / curMax
+        finalBlue[i][j] = averageB[maxIndex] / curMax
+    b = 0
+    for i in [0..@height-1]
+      for j in [0..@width-1]
+        out.data[b] = finalRed[i][j]
+        out.data[b+1] = finalGreen[i][j]
+        out.data[b+2] = finalBlue[i][j]
+        b+=4
+    return new Image(out)    
+
+  #flips the image horizontally
+  flipHorizontal:()=>
+    flipped = document.createElement("canvas")
+    flipped.width = @width
+    flipped.height = @height
+    ct = flipped.getContext("2d")
+    ct.translate(@width,0)
+    ct.scale(-1,1)
+    ct.drawImage(@canvas, 0, 0)
+    return new Image(flipped)    
+
+  #flips image vertically
+  flipVertical:()=>
+    flipped = document.createElement("canvas")
+    flipped.width = @width
+    flipped.height = @height
+    ct = flipped.getContext("2d")
+    ct.scale(1,-1)
+    ct.drawImage(@canvas, 0, -@height)
+    return new Image(flipped)    
+
 
 
