@@ -1554,5 +1554,62 @@ module.exports = class Image extends Model
           #out.data[a+2] = 255
           #out.data[a+3] = 255
         a+=4
+    return new Image(out)
+    
+  blobs:()=>
+    im = @binarize()
+    col = im.getMatrix()
+    greyinf = []; labels = []; x =[];y = [];equivalence=[]
+    newLabel = 0; max = 0
+    for i in [0..@height-1]
+      for j in [0..@width-1]
+        x.push (col[i][j][0]+col[i][j][1]+col[i][j][2])/3
+        y.push 0
+      greyinf.push x
+      labels.push y
+    console.log "initializing complete"
+    for j in [1..@width-1]
+      if greyinf[0][j] is greyinf[0][j-1] and labels[0][j-1] is 0
+        newLabel+=1
+        labels[0][j-1] = newLabel
+        labels[0][j] = labels[0][j-1]
+      if greyinf[0][j] is greyinf[0][j-1] and labels[0][j-1] isnt 0
+        labels[0][j] = labels[0][j-1]
+    console.log "1st row labelled"
+    console.log labels[0]
+    for i in [1..@height-1]
+      for j in [1..@width-1]
+        my = []
+        if greyinf[i][j] is greyinf[i][j-1] and greyinf[i][j] isnt greyinf[i-1][j] then labels[i][j] is labels[i][j-1]
+        if greyinf[i][j] isnt greyinf[i][j-1] and greyinf[i][j] is greyinf[i-1][j] then labels[i][j] is labels[i-1][j]
+        if greyinf[i][j] isnt greyinf[i][j-1] and greyinf[i][j] isnt greyinf[i-1][j]
+          newLabel+=1
+          labels[i][j] = newLabel
+        if greyinf[i][j] is greyinf[i-1][j] and greyinf[i][j] is greyinf[i][j-1] and labels[i-1][j] is labels[i][j-1] then labels[i][j] is labels[i-1][j]
+        if greyinf[i][j] is greyinf[i-1][j] and greyinf[i][j] is greyinf[i][j-1] and labels[i-1][j] isnt labels[i][j-1] then console.log "yes"
+          labels[i][j] = Math.min(labels[i][j-1],labels[i-1][j])
+          my.push Math.max(labels[i][j-1],labels[i-1][j])
+          my.push labels[i][j]
+          equivalence.push my
+    for i in [1..@height-1]
+      for j in [1..@width-1]    
+        if labels[i][j] > max
+          max = labels[i][j]
+    out = @getArray()
+    a = 0
+    for i in [0..@height-1]
+      for j in [0..@width-1]
+        out.data[a] = labels[i][j]/max * 255
+        out.data[a+1] = 0
+        out.data[a+2] = 0
+        out.data[a+3] = 255
+        a+=4
+    return new Image(out)
+    
+  test:()=>
+    im = @binarize()
+    out = @getArray()
+    for i in out.data
+      console.log i
     return new Image(out)    
             
